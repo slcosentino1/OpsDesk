@@ -6,7 +6,7 @@ OpsDesk does **not** embed or copy AskDoc. AskDoc is a separate RAG service (Fas
 
 ## Status
 
-Scaffold only: settings + AskDoc HTTP client. LangGraph, tools, and evaluation are not implemented yet.
+Minimal ReAct graph with one tool: `search_docs` (AskDoc retrieval). Tickets and evaluation are not implemented yet.
 
 ## Setup
 
@@ -17,7 +17,9 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-`.env` is gitignored. The only setting today is `OPSDESK_ASKDOC_BASE_URL` (default `http://127.0.0.1:8000`). Settings also work without a file.
+Defaults assume AskDoc on `http://127.0.0.1:8000` and an OpenAI-compatible LLM (Ollama) on `http://localhost:11434/v1`.
+
+AskDoc must already be running, with documents ingested via `POST /api/askdoc/documents` (outside the agent loop).
 
 ## Tests
 
@@ -25,6 +27,8 @@ cp .env.example .env
 pytest
 ```
 
-## Run (later)
+## Run
 
-The agent loop is not wired yet. After the graph exists, this README will document how to start it. AskDoc must already be running and ingesting documents via `POST /api/askdoc/documents` (outside the agent loop).
+```bash
+python -m opsdesk "How do I reset the VPN?"
+```

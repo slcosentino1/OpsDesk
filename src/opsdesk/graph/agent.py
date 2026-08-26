@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+import json
+import operator
+from typing import Annotated, Any, Literal, TypedDict
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from openai import OpenAI
+
+from opsdesk.clients.askdoc import AskDocClient
+from opsdesk.settings import get_settings
+from opsdesk.tools.search_docs import SEARCH_DOCS_TOOL, search_docs
+
+SYSTEM_PROMPT = (
+    "You are an internal support agent. "
+    "Use search_docs to retrieve company documentation before answering. "
+    "Ground the answer in the retrieved passages. "
+    "If nothing relevant is found, say so."
+)
+
+
+class AgentState(TypedDict):
+    messages: Annotated[list[dict[str, Any]], operator.add]
+
+
+def _assistant_message(message: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "role": "assistant",
+        "content": message.content or "",
+    }
+    if message.tool_calls:
+        payload["tool_calls"] = [
+            {
+                "id": tool_call.id,
+                "type": "function",
+                "function": {
+                    "name": tool_call.function.name,
+                    "arguments": tool_call.function.arguments,
+                },
+            }
+            for tool_call in message.tool_calls
+        ]
+    return payload
+
+
+def _run_tool(client: AskDocClient, name: str, arguments: dict[str, Any]) -> str:
+    if name == "search_docs":
+        return search_docs(client, query=arguments["query"])
+    return f"Unknown tool: {name}"
+
+
+def build_agent(
+    *,
+    client: AskDocClient | None = None,
+    llm: OpenAI | None = None,
+) -> CompiledStateGraph:
+    settings = get_settings()
+    askdoc = client or AskDocClient()
+    llm_client = llm or OpenAI(
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key,
+    )
+
+    def call_model(state: AgentState) -> dict[str, list[dict[str, Any]]]:
+        response = llm_client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[{"role": "system", "content": SYSTEM_PROMPT}, *state["messages"]],
+            tools=[SEARCH_DOCS_TOOL],
+        )
+        return {"messages": [_assistant_message(response.choices[0].message)]}
+
+    def run_tools(state: AgentState) -> dict[str, list[dict[str, Any]]]:
+        last = state["messages"][-1]
+        outputs: list[dict[str, Any]] = []
+        for tool_call in last.get("tool_calls") or []:
+            arguments = json.loads(tool_call["function"]["arguments"] or "{}")
+            outputs.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call["id"],
+                    "content": _run_tool(
+                        askdoc,
+                        tool_call["function"]["name"],
+                        arguments,
+                    ),
+                }
+            )
+        return {"messages": outputs}
+
+    def route(state: AgentState) -> Literal["tools", "__end__"]:
+        last = state["messages"][-1]
+        if last.get("tool_calls"):
+            return "tools"
+        return END
+
+    graph = StateGraph(AgentState)
+    graph.add_node("model", call_model)
+    graph.add_node("tools", run_tools)
+    graph.add_edge(START, "model")
+    graph.add_conditional_edges("model", route)
+    graph.add_edge("tools", "model")
+    return graph.compile()
