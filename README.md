@@ -6,7 +6,7 @@ OpsDesk does **not** embed or copy AskDoc. AskDoc is a separate RAG service (Fas
 
 ## Status
 
-Minimal ReAct graph with one tool: `search_docs` (AskDoc retrieval). Tickets and evaluation are not implemented yet.
+ReAct graph with two tools: `search_docs` (AskDoc) and `lookup_ticket` (in-memory ticket store). Ticket create and evaluation are not implemented yet.
 
 ## Setup
 
@@ -31,4 +31,7 @@ pytest
 
 ```bash
 python -m opsdesk "How do I reset the VPN?"
+python -m opsdesk "What is the status of TCK-101?"
 ```
+
+Seed tickets in memory: `TCK-101` (open), `TCK-102` (closed), `TCK-103` (in progress). They reset every process start.

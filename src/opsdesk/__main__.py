@@ -11,7 +11,7 @@ def main() -> None:
 
     agent = build_agent()
     result = agent.invoke({"messages": [{"role": "user", "content": question}]})
-    print(result["messages"][-1].content)
+    print(result["messages"][-1]["content"])
 
 
 if __name__ == "__main__":

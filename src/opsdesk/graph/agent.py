@@ -10,12 +10,17 @@ from openai import OpenAI
 
 from opsdesk.clients.askdoc import AskDocClient
 from opsdesk.settings import get_settings
+from opsdesk.tickets.memory import InMemoryTicketStore
+from opsdesk.tools.lookup_ticket import LOOKUP_TICKET_TOOL, lookup_ticket
 from opsdesk.tools.search_docs import SEARCH_DOCS_TOOL, search_docs
+
+TOOLS = [SEARCH_DOCS_TOOL, LOOKUP_TICKET_TOOL]
 
 SYSTEM_PROMPT = (
     "You are an internal support agent. "
     "Use search_docs to retrieve company documentation before answering. "
-    "Ground the answer in the retrieved passages. "
+    "Use lookup_ticket when the user asks about a ticket id such as TCK-101. "
+    "Ground documentation answers in the retrieved passages. "
     "If nothing relevant is found, say so."
 )
 
@@ -44,19 +49,29 @@ def _assistant_message(message: Any) -> dict[str, Any]:
     return payload
 
 
-def _run_tool(client: AskDocClient, name: str, arguments: dict[str, Any]) -> str:
+def _run_tool(
+    *,
+    askdoc: AskDocClient,
+    tickets: InMemoryTicketStore,
+    name: str,
+    arguments: dict[str, Any],
+) -> str:
     if name == "search_docs":
-        return search_docs(client, query=arguments["query"])
+        return search_docs(askdoc, query=arguments["query"])
+    if name == "lookup_ticket":
+        return lookup_ticket(tickets, ticket_id=arguments["ticket_id"])
     return f"Unknown tool: {name}"
 
 
 def build_agent(
     *,
     client: AskDocClient | None = None,
+    tickets: InMemoryTicketStore | None = None,
     llm: OpenAI | None = None,
 ) -> CompiledStateGraph:
     settings = get_settings()
     askdoc = client or AskDocClient()
+    ticket_store = tickets or InMemoryTicketStore()
     llm_client = llm or OpenAI(
         base_url=settings.llm_base_url,
         api_key=settings.llm_api_key,
@@ -66,7 +81,7 @@ def build_agent(
         response = llm_client.chat.completions.create(
             model=settings.llm_model,
             messages=[{"role": "system", "content": SYSTEM_PROMPT}, *state["messages"]],
-            tools=[SEARCH_DOCS_TOOL],
+            tools=TOOLS,
         )
         return {"messages": [_assistant_message(response.choices[0].message)]}
 
@@ -80,9 +95,10 @@ def build_agent(
                     "role": "tool",
                     "tool_call_id": tool_call["id"],
                     "content": _run_tool(
-                        askdoc,
-                        tool_call["function"]["name"],
-                        arguments,
+                        askdoc=askdoc,
+                        tickets=ticket_store,
+                        name=tool_call["function"]["name"],
+                        arguments=arguments,
                     ),
                 }
             )
