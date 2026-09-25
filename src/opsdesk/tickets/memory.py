@@ -32,3 +32,22 @@ class InMemoryTicketStore:
 
     def get(self, ticket_id: str) -> Ticket | None:
         return self._tickets.get(ticket_id)
+
+    def create(self, *, title: str, requester: str, summary: str) -> Ticket:
+        ticket = Ticket(
+            id=self._next_id(),
+            title=title,
+            status="open",
+            requester=requester,
+            summary=summary,
+        )
+        self._tickets[ticket.id] = ticket
+        return ticket
+
+    def _next_id(self) -> str:
+        numbers: list[int] = []
+        for ticket_id in self._tickets:
+            suffix = ticket_id.removeprefix("TCK-")
+            if suffix.isdigit():
+                numbers.append(int(suffix))
+        return f"TCK-{max(numbers, default=100) + 1}"

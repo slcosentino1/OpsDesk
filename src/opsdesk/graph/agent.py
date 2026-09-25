@@ -11,15 +11,17 @@ from openai import OpenAI
 from opsdesk.clients.askdoc import AskDocClient
 from opsdesk.settings import get_settings
 from opsdesk.tickets.memory import InMemoryTicketStore
+from opsdesk.tools.create_ticket import CREATE_TICKET_TOOL, create_ticket
 from opsdesk.tools.lookup_ticket import LOOKUP_TICKET_TOOL, lookup_ticket
 from opsdesk.tools.search_docs import SEARCH_DOCS_TOOL, search_docs
 
-TOOLS = [SEARCH_DOCS_TOOL, LOOKUP_TICKET_TOOL]
+TOOLS = [SEARCH_DOCS_TOOL, LOOKUP_TICKET_TOOL, CREATE_TICKET_TOOL]
 
 SYSTEM_PROMPT = (
     "You are an internal support agent. "
     "Use search_docs to retrieve company documentation before answering. "
     "Use lookup_ticket when the user asks about a ticket id such as TCK-101. "
+    "Use create_ticket when the user wants to open a new ticket. "
     "Ground documentation answers in the retrieved passages. "
     "If nothing relevant is found, say so."
 )
@@ -60,6 +62,13 @@ def _run_tool(
         return search_docs(askdoc, query=arguments["query"])
     if name == "lookup_ticket":
         return lookup_ticket(tickets, ticket_id=arguments["ticket_id"])
+    if name == "create_ticket":
+        return create_ticket(
+            tickets,
+            title=arguments["title"],
+            requester=arguments["requester"],
+            summary=arguments["summary"],
+        )
     return f"Unknown tool: {name}"
 
 
